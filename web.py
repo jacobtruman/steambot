@@ -2,12 +2,15 @@ import urlparse
 import glob
 import os
 import sys
-import time
+from time import sleep
 import json
 from bs4 import BeautifulSoup
 
 from steam.guard import SteamAuthenticator
 import steam.webauth as wa
+
+update_check = 7
+
 
 def get_all_config_files(configs_dir):
     if configs_dir is not None and os.path.exists(configs_dir):
@@ -28,7 +31,7 @@ def get_form_info(form, url):
     return ret
 
 
-def process_forms(dom, url):
+def process_forms(session, dom, url):
     form = dom.find(id="next_in_queue_form")
     if form:
         form_info = get_form_info(form, url)
@@ -46,7 +49,7 @@ def process_forms(dom, url):
                 print(span_element.contents)
                 break
 
-        return process_forms(response_dom, url)
+        return process_forms(session, response_dom, url)
     else:
         div_elements = dom.find_all('div')
         for div_element in div_elements:
@@ -65,7 +68,7 @@ def start_queue(session, url = None, trys = 0):
 
     if response.status_code is 200:
         base_dom = BeautifulSoup(response.text, 'html.parser')
-        if not process_forms(base_dom, url):
+        if not process_forms(session, base_dom, url):
             return start_queue(session)
         else:
             return True
@@ -79,57 +82,175 @@ def start_queue(session, url = None, trys = 0):
             return False
 
 
-def get_game(session):
-    planet_to_join = None
-    zone_to_join = None
-    url = "https://community.steam-api.com/ITerritoryControlMinigameService/GetPlanets/v0001/?active_only=0&language=english"
+def get_game_token(session):
+    url = "https://steamcommunity.com/saliengame/gettoken"
     response = session.get(url)
-    planets = json.loads(response.text)
-    for planet in planets['response']['planets']:
-        if planet['state']['active']:
-            planet_to_join = planet['id']
-
-    join_url = "https://community.steam-api.com/ITerritoryControlMinigameService/JoinPlanet/v0001/"
-    join_data = {'id': planet['id'], 'access_token': 'e4190c66f398f165dfb30b284cef5242'}
-    post_response = session.post(join_url, data=join_data)
-    get_planet_url = "https://community.steam-api.com/ITerritoryControlMinigameService/GetPlanet/v0001/?id={0}&language=english".format(
-        planet_to_join)
-    planet_response = session.get(get_planet_url)
-    planet_contents = json.loads(planet_response.text)
-    for zone in planet_contents['response']['planets'][0]['zones']:
-        if not zone['captured']:
-            zone_to_join = zone['zone_position']
-
-    print("Joining planet: {0}".format(planet_to_join))
-    print("\tJoining zone: {0}".format(zone_to_join))
-    join_zone_url = "https://community.steam-api.com/ITerritoryControlMinigameService/JoinZone/v0001/"
-    join_zone_data = {'zone_position': zone_to_join, 'access_token': 'e4190c66f398f165dfb30b284cef5242'}
-    join_zone_response = session.post(join_zone_url, data=join_zone_data)
-    print(join_zone_response.text)
+    token = json.loads(response.text)
+    return token['token']
 
 
-def login(user, previous_code=None):
+def get_zone(session):
+    data = {
+        'active_only': 1,
+        'language':'english'
+    }
+    result = session.get("https://community.steam-api.com/ITerritoryControlMinigameService/GetPlanets/v0001/", params=data)
+    if result.status_code != 200:
+        print("Get planets errored... trying again(after 10s cooldown)")
+        sleep(10)
+        get_zone(session)
+    json_data = result.json()
+    for difficulty in range(4, 0, -1):
+        for planet in json_data["response"]["planets"]:
+            info_data = {'id': planet["id"]}
+            info = session.get("https://community.steam-api.com/ITerritoryControlMinigameService/GetPlanet/v0001/", params=info_data)
+            if info.status_code != 200:
+                print("Get planet errored... trying the next planet")
+                continue
+            info_json = info.json()
+            for zone in info_json["response"]["planets"][0]["zones"]:
+                if zone["difficulty"] == difficulty and not zone["captured"] and zone["capture_progress"] < 0.9:
+                    return str(zone["zone_position"]), planet["id"], planet["state"]["name"], difficulty
+
+
+def get_user_info(session):
+    data = {'access_token': get_game_token(session)}
+    result = session.post("https://community.steam-api.com/ITerritoryControlMinigameService/GetPlayerInfo/v0001/", data=data)
+    if result.status_code != 200:
+        print("Getting user info errored... trying again(after 10s cooldown)")
+        sleep(10)
+        play_game(session)
+    if "active_zone_game" in result.json()["response"]:
+        print("Stuck on zone... trying to leave")
+        leave_game(session, result.json()["response"]["active_zone_game"])
+    if "active_planet" in result.json()["response"]:
+        return result.json()["response"]["active_planet"]
+    else:
+        return -1
+
+
+def leave_game(session, current):
+    data = {
+        'gameid': current,
+        'access_token': get_game_token(session)
+    }
+    result = session.post("https://community.steam-api.com/IMiniGameService/LeaveGame/v0001/", data=data)
+    if result.status_code != 200:
+        print("Leave planet " + str(current) + " errored... trying again(after 10s cooldown)")
+        sleep(10)
+        play_game(session)
+
+
+def join_planet(session, planet_id, planet_name):
+    data = {
+        'id': planet_id,
+        'access_token': get_game_token(session)
+    }
+    result = session.post("https://community.steam-api.com/ITerritoryControlMinigameService/JoinPlanet/v0001/", data=data)
+    if result.status_code != 200:
+        print("Join planet '" + str(planet_name) + "' (" + str(planet_id) + ") errored... trying again(after 10s cooldown)")
+        sleep(10)
+        play_game(session)
+    else:
+        print("Joined planet: " + str(planet_name) + " (" + str(planet_id) + ")" + "\n")
+
+
+def join_zone(session, zone_position, difficulty):
+    dstr = {
+        1: 'Easy',
+        2: 'Medium',
+        3: 'Hard',
+        4: 'Boss',
+    }
+    data = {
+        'zone_position': zone_position,
+        'access_token': get_game_token(session)
+    }
+    result = session.post("https://community.steam-api.com/ITerritoryControlMinigameService/JoinZone/v0001/", data=data)
+    if result.status_code != 200 or result.json() == {'response':{}}:
+        print("Join zone " + str(zone_position) + " errored... trying again(after 1m cooldown)")
+        sleep(60)
+        play_game(session)
+    else:
+        print("Joined zone: " + str(zone_position) + " (Difficulty: " + dstr.get(difficulty,difficulty) + ")")
+
+
+def report_score(session, difficulty):
+    data = {
+        'access_token': get_game_token(session),
+        'score': 5*120*(2**(difficulty-1)),
+        'language':'english'
+    }
+    result = session.post("https://community.steam-api.com/ITerritoryControlMinigameService/ReportScore/v0001/", data=data)
+    if result.status_code != 200 or result.json() == {'response':{}}:
+        print("Report score errored... Current zone likely completed...\n")
+        play_game(session)
+    else:
+        res = result.json()["response"]
+        print("Old Score: " + str(res["old_score"]) + " (Level " + str(res["old_level"]) + ") - " + "New Score: " + str(res["new_score"]) + " (Level " + str(res["new_level"]) + ") - " + "Next Level Score: " + str(res["next_level_score"]) + "\n")
+
+
+def play_game(session):
+    print("Checking if user is currently on a planet")
+    current = get_user_info(session)
+    if current != -1:
+        print("Leaving current planet")
+        leave_game(session, current)
+    print("Finding a planet and zone")
+    zone_position, planet_id, planet_name, difficulty = get_zone(session)
+    join_planet(session, planet_id, planet_name)
+    while 1:
+        join_zone(session, zone_position, difficulty)
+        print("Sleeping for 1 minute 50 seconds")
+        sleep(110)
+        report_score(session, difficulty)
+        update_check = update_check - 1
+        if update_check == 0:
+            print("Checking for any new planets......")
+            update_check = 7
+            play_game(session)
+        get_user_info(session) # get user info and leave game, incase user gets stuck
+
+
+def login(user, secret, previous_code=None):
     wait = 10
     sa = SteamAuthenticator(secret)
     code = sa.get_code()
-    session = None
     if previous_code is None or previous_code != code:
         try:
-            session = user.login(twofactor_code=code)
-            print("Successful login with 2fa code")
+            print("Successful login ({0}) with 2fa code".format(user.username))
+            return user.login(twofactor_code=code)
         except wa.TwoFactorCodeRequired:
-            return login(user, code)
+            return login(user, secret, code)
     else:
         print("2fa code failed; waiting {0} seconds and trying again".format(wait))
-        time.sleep(wait)
-        return login(user, code)
+        sleep(wait)
+        return login(user, secret, code)
 
-    return session
 
-api_key = "EB216E998E51A53208F84E96015A0605"
+def process_config(config):
+    if 'username' in config and 'password' in config:
+        user = wa.WebAuth(config['username'], config['password'])
+        if 'steam_guard' in config:
+            secret = config['steam_guard']
+            session = login(user, secret)
+            if session is not None:
 
-url = 'https://store.steampowered.com/explore/startnew'
-username = "jacobtruman"
+                # TODO: test this
+                play_game(session)
+
+                if start_queue(session):
+                    print("Successfully processed queue")
+                else:
+                    print("Failed to process queue")
+            else:
+                print("Unable to login...")
+        else:
+            print("steam_guard is not defined in config")
+    else:
+        print("username or password is not defined in config")
+
+username = None
 
 configs_dir = "./configs"
 
@@ -138,31 +259,13 @@ config_files = get_all_config_files(configs_dir)
 base_config = {}
 base_config_file = '{0}/config.json'.format(configs_dir)
 
-user = None
 for config_file in config_files:
     # exclude base config (config.json)
     if config_file != base_config_file:
         try:
             config = json.loads(open(config_file, "r").read())
-            if config['username'] == username:
-                user = wa.WebAuth(config['username'], config['password'])
-                #print(config)
-                secret = config['steam_guard']
+            if username is None or config['username'] == username:
+                process_config(config)
         except ValueError, e:
             print(e.message)
             pass
-
-if user is not None:
-    session = login(user)
-
-    if session is not None:
-
-        # TODO: test this
-        get_game(session)
-
-        if start_queue(session, url):
-            print("Successfully processed queue")
-        else:
-            print("Failed to process queue")
-    else:
-        print("Unable to login...")

@@ -248,7 +248,8 @@ def process_config(config):
     else:
         print("username or password is not defined in config")
 
-username = None
+
+username = sys.argv[1]
 
 configs_dir = "./configs"
 

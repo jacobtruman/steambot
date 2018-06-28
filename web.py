@@ -9,6 +9,8 @@ from bs4 import BeautifulSoup
 from steam.guard import SteamAuthenticator
 import steam.webauth as wa
 
+username = sys.argv[1]
+
 
 def get_all_config_files(configs_dir):
     if configs_dir is not None and os.path.exists(configs_dir):
@@ -36,7 +38,7 @@ def process_forms(session, dom, url):
 
         post_response = session.post(form_info['url'], data=form_info['data'])
 
-        file = open("./out.html", "w")
+        file = open("./{0}.html".format(username), "w")
         file.write(post_response.text.encode('utf-8'))
         file.close()
 
@@ -235,7 +237,7 @@ def process_config(config):
             if session is not None:
 
                 # TODO: test this
-                play_game(session)
+                #play_game(session)
 
                 if start_queue(session):
                     print("Successfully processed queue")
@@ -248,8 +250,6 @@ def process_config(config):
     else:
         print("username or password is not defined in config")
 
-
-username = sys.argv[1]
 
 configs_dir = "./configs"
 

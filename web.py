@@ -9,7 +9,10 @@ from bs4 import BeautifulSoup
 from steam.guard import SteamAuthenticator
 import steam.webauth as wa
 
-username = sys.argv[1]
+if len(sys.argv) > 1:
+    username = sys.argv[1]
+else:
+    username = None
 
 
 def get_all_config_files(configs_dir):

@@ -274,6 +274,7 @@ def process_config(config):
                 #play_game(session)
                 join_try = 0
                 while join_try < 3:
+                    join_try += 1
                     get_cards_from_game(session)
                     sleep(5)
 

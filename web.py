@@ -59,6 +59,7 @@ def process_forms(session, dom, url):
             if 'class' in div_element.attrs and 'subtext' in div_element['class']:
                 if "tomorrow" not in str(div_element):
                     print(div_element.contents)
+                    sleep(5)
                     return False
         return True
 
@@ -116,23 +117,26 @@ def get_zone(session):
                     return str(zone["zone_position"]), planet["id"], planet["state"]["name"], difficulty
 
 
-def get_user_info(session, update_check):
+def get_user_info(session, update_check, get_cards=False):
     data = {'access_token': get_game_token(session)}
     result = session.post("https://community.steam-api.com/ITerritoryControlMinigameService/GetPlayerInfo/v0001/", data=data)
     if result.status_code != 200:
         print("Getting user info errored... trying again(after 10s cooldown)")
         sleep(10)
-        play_game(session, update_check)
+        if get_cards:
+            get_cards_from_game(session)
+        else:
+            play_game(session, update_check)
     if "active_zone_game" in result.json()["response"]:
         print("Stuck on zone... trying to leave")
-        leave_game(session, result.json()["response"]["active_zone_game"], update_check)
+        leave_game(session, result.json()["response"]["active_zone_game"], update_check, get_cards)
     if "active_planet" in result.json()["response"]:
         return result.json()["response"]["active_planet"]
     else:
         return -1
 
 
-def leave_game(session, current, update_check):
+def leave_game(session, current, update_check, get_cards=False):
     data = {
         'gameid': current,
         'access_token': get_game_token(session)
@@ -141,10 +145,13 @@ def leave_game(session, current, update_check):
     if result.status_code != 200:
         print("Leave planet " + str(current) + " errored... trying again(after 10s cooldown)")
         sleep(10)
-        play_game(session, update_check)
+        if get_cards:
+            get_cards_from_game(session)
+        else:
+            play_game(session, update_check)
 
 
-def join_planet(session, planet_id, planet_name, update_check):
+def join_planet(session, planet_id, planet_name, update_check, get_cards=False):
     data = {
         'id': planet_id,
         'access_token': get_game_token(session)
@@ -153,12 +160,15 @@ def join_planet(session, planet_id, planet_name, update_check):
     if result.status_code != 200:
         print("Join planet '" + str(planet_name) + "' (" + str(planet_id) + ") errored... trying again(after 10s cooldown)")
         sleep(10)
-        play_game(session, update_check)
+        if get_cards:
+            get_cards_from_game(session)
+        else:
+            play_game(session, update_check)
     else:
         print("Joined planet: " + str(planet_name) + " (" + str(planet_id) + ")" + "\n")
 
 
-def join_zone(session, zone_position, difficulty, update_check):
+def join_zone(session, zone_position, difficulty, update_check, get_cards=False):
     dstr = {
         1: 'Easy',
         2: 'Medium',
@@ -173,12 +183,15 @@ def join_zone(session, zone_position, difficulty, update_check):
     if result.status_code != 200 or result.json() == {'response':{}}:
         print("Join zone " + str(zone_position) + " errored... trying again(after 1m cooldown)")
         sleep(60)
-        play_game(session, update_check)
+        if get_cards:
+            get_cards_from_game(session)
+        else:
+            play_game(session, update_check)
     else:
         print("Joined zone: " + str(zone_position) + " (Difficulty: " + dstr.get(difficulty,difficulty) + ")")
 
 
-def report_score(session, difficulty, update_check):
+def report_score(session, difficulty, update_check, get_cards=False):
     data = {
         'access_token': get_game_token(session),
         'score': 5*120*(2**(difficulty-1)),
@@ -187,10 +200,31 @@ def report_score(session, difficulty, update_check):
     result = session.post("https://community.steam-api.com/ITerritoryControlMinigameService/ReportScore/v0001/", data=data)
     if result.status_code != 200 or result.json() == {'response':{}}:
         print("Report score errored... Current zone likely completed...\n")
-        play_game(session, update_check)
+        if get_cards:
+            get_cards_from_game(session)
+        else:
+            play_game(session, update_check)
     else:
         res = result.json()["response"]
         print("Old Score: " + str(res["old_score"]) + " (Level " + str(res["old_level"]) + ") - " + "New Score: " + str(res["new_score"]) + " (Level " + str(res["new_level"]) + ") - " + "Next Level Score: " + str(res["next_level_score"]) + "\n")
+
+
+def get_cards_from_game(session, join_try=0):
+    print("Checking if user is currently on a planet")
+    current = get_user_info(session, 0, True)
+    if current != -1:
+        print("Leaving current planet")
+        leave_game(session, current, 0, True)
+    print("Finding a planet and zone")
+    zone_position, planet_id, planet_name, difficulty = get_zone(session)
+    join_planet(session, planet_id, planet_name, 0, True)
+    while join_try < 3:
+        join_zone(session, zone_position, difficulty)
+        print("Sleeping for 5 seconds")
+        sleep(5)
+        report_score(session, difficulty, 0, True)
+        join_try += 1
+        get_cards_from_game(session, join_try)
 
 
 def play_game(session, update_check=7):
@@ -241,6 +275,7 @@ def process_config(config):
 
                 # TODO: test this
                 #play_game(session)
+                get_cards_from_game(session)
 
                 if start_queue(session):
                     print("Successfully processed queue")

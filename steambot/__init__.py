@@ -65,7 +65,6 @@ class SteamBot(object):
         if previous_code is None or previous_code != code:
             self.logger.debug("Attempting login...")
             self.client.login(self.username, password=self.config['password'], two_factor_code=code)
-            self.logger.success("Logged in")
         else:
             self.logger.warning("Steam Guard code failed; waiting {0} seconds and trying again".format(self.steam_guard_code_wait))
             sleep(self.steam_guard_code_wait)

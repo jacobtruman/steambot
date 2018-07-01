@@ -200,10 +200,10 @@ def report_score(session, difficulty, update_check, get_cards=False):
     result = session.post("https://community.steam-api.com/ITerritoryControlMinigameService/ReportScore/v0001/", data=data)
     if result.status_code != 200 or result.json() == {'response':{}}:
         print("Report score errored... Current zone likely completed...\n")
-        if get_cards:
-            get_cards_from_game(session)
-        else:
+        if not get_cards:
             play_game(session, update_check)
+        # else:
+            # get_cards_from_game(session)
     else:
         res = result.json()["response"]
         print("Old Score: " + str(res["old_score"]) + " (Level " + str(res["old_level"]) + ") - " + "New Score: " + str(res["new_score"]) + " (Level " + str(res["new_level"]) + ") - " + "Next Level Score: " + str(res["next_level_score"]) + "\n")
@@ -221,6 +221,7 @@ def get_cards_from_game(session):
 
     join_zone(session, zone_position, difficulty, 0, True)
     print("Sleeping for 5 seconds")
+    sleep(5)
     report_score(session, difficulty, 0, True)
 
 
@@ -275,8 +276,8 @@ def process_config(config):
                 join_try = 0
                 while join_try < 3:
                     join_try += 1
+                    print("Try {0}".format(join_try))
                     get_cards_from_game(session)
-                    sleep(5)
 
                 if start_queue(session):
                     print("Successfully processed queue")

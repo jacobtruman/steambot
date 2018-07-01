@@ -209,7 +209,7 @@ def report_score(session, difficulty, update_check, get_cards=False):
         print("Old Score: " + str(res["old_score"]) + " (Level " + str(res["old_level"]) + ") - " + "New Score: " + str(res["new_score"]) + " (Level " + str(res["new_level"]) + ") - " + "Next Level Score: " + str(res["next_level_score"]) + "\n")
 
 
-def get_cards_from_game(session, join_try=0):
+def get_cards_from_game(session):
     print("Checking if user is currently on a planet")
     current = get_user_info(session, 0, True)
     if current != -1:
@@ -218,13 +218,10 @@ def get_cards_from_game(session, join_try=0):
     print("Finding a planet and zone")
     zone_position, planet_id, planet_name, difficulty = get_zone(session)
     join_planet(session, planet_id, planet_name, 0, True)
-    while join_try < 3:
-        join_zone(session, zone_position, difficulty)
-        print("Sleeping for 5 seconds")
-        sleep(5)
-        report_score(session, difficulty, 0, True)
-        join_try += 1
-        get_cards_from_game(session, join_try)
+
+    join_zone(session, zone_position, difficulty, 0, True)
+    print("Sleeping for 5 seconds")
+    report_score(session, difficulty, 0, True)
 
 
 def play_game(session, update_check=7):
@@ -275,7 +272,10 @@ def process_config(config):
 
                 # TODO: test this
                 #play_game(session)
-                get_cards_from_game(session)
+                join_try = 0
+                while join_try < 3:
+                    get_cards_from_game(session)
+                    sleep(5)
 
                 if start_queue(session):
                     print("Successfully processed queue")

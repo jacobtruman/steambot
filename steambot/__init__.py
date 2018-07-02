@@ -10,6 +10,7 @@ from steam import SteamClient
 from steam.enums.emsg import EMsg
 from steam.guard import SteamAuthenticator
 
+
 class SteamBot(object):
 
     def __init__(self, args):
@@ -55,10 +56,10 @@ class SteamBot(object):
                 self.logger.success("Logged in as user {0}".format(self.username))
             else:
                 self.logger.warning("Config file for user provided does not exist: {0}".format(config_file))
-                #self.client.cli_login()
+                # self.client.cli_login()
         else:
             self.logger.warning("Username not provided")
-            #self.client.cli_login()
+            # self.client.cli_login()
 
     def login(self, previous_code=None):
         code = self.sa.get_code()
@@ -66,7 +67,8 @@ class SteamBot(object):
             self.logger.debug("Attempting login...")
             self.client.login(self.username, password=self.config['password'], two_factor_code=code)
         else:
-            self.logger.warning("Steam Guard code failed; waiting {0} seconds and trying again".format(self.steam_guard_code_wait))
+            self.logger.warning(
+                "Steam Guard code failed; waiting {0} seconds and trying again".format(self.steam_guard_code_wait))
             sleep(self.steam_guard_code_wait)
             self.login(code)
 

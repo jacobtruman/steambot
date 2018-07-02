@@ -24,7 +24,6 @@ def parse_args():
 
     parser.add_argument(
         '-u', '--username',
-        action=None,
         dest='username',
         help='Steam Username',
     )

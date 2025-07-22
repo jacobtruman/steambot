@@ -18,8 +18,8 @@ if len(sys.argv) > 1:
                 sa = SteamAuthenticator(config['steam_guard'])
                 code = sa.get_code()
                 print(code)
-        except ValueError, e:
-            print(e.message)
+        except ValueError as e:
+            print(e)
             pass
     else:
         print("No config for username: {0}".format(username))

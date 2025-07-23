@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import urlparse
+from urllib.parse import urlparse
 import glob
 import os
 import sys
@@ -72,7 +72,7 @@ def start_queue(session, url=None, tries=0):
         url = 'https://store.steampowered.com/explore/startnew'
     response = session.get(url)
 
-    if response.status_code is 200:
+    if response.status_code == 200:
         base_dom = BeautifulSoup(response.text, 'html.parser')
         if not process_forms(session, base_dom, url):
             return start_queue(session)
@@ -94,12 +94,13 @@ def login(user, secret, previous_code=None):
     code = sa.get_code()
     if previous_code is None or previous_code != code:
         try:
-            print("Successful login ({0}) with 2fa code".format(user.username))
+            print(f"Successful login ({user.username}) with 2fa code")
             return user.login(twofactor_code=code)
-        except wa.TwoFactorCodeRequired:
+        except wa.TwoFactorCodeRequired as e:
+            print(e)
             return login(user, secret, code)
     else:
-        print("2fa code failed; waiting {0} seconds and trying again".format(wait))
+        print(f"2fa code failed; waiting {wait} seconds and trying again")
         sleep(wait)
         return login(user, secret, code)
 
@@ -107,6 +108,7 @@ def login(user, secret, previous_code=None):
 def process_config(user_config):
     if 'username' in user_config and 'password' in user_config:
         user = wa.WebAuth(user_config['username'], user_config['password'])
+        user.steam_id_base = 'steamID'
         if 'steam_guard' in user_config:
             secret = user_config['steam_guard']
             session = login(user, secret)
@@ -138,6 +140,6 @@ for config_file in config_files:
             config = json.loads(open(config_file, "r").read())
             if username is None or config['username'] == username:
                 process_config(config)
-        except ValueError, e:
-            print(e.message)
+        except ValueError as e:
+            print(e)
             pass

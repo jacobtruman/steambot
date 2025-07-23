@@ -6,7 +6,7 @@ import trulogger
 
 from time import sleep
 
-from steam import SteamClient
+from steam.client import SteamClient
 from steam.enums.emsg import EMsg
 from steam.guard import SteamAuthenticator
 
@@ -35,11 +35,11 @@ class SteamBot(object):
         logger_config = {'colorize': True, 'verbose': self.verbose}
         if self.log_dir is not None:
             date = datetime.datetime.today().strftime('%Y-%m-%d')
-            logger_config['log_file'] = '{0}/SteamBot_{1}_{2}.log'.format(self.log_dir, self.username, date)
+            logger_config['log_file'] = f"{self.log_dir}/SteamBot_{self.username}_{date}.log"
         self.logger = trulogger.TruLogger(logger_config)
 
         if self.username is not None:
-            config_file = "{0}/{1}.json".format(self.configs_dir, self.username)
+            config_file = f"{self.configs_dir}/{self.username}.json"
             if os.path.exists(config_file):
                 self.config = json.loads(open(config_file, "r").read())
                 if 'password' not in self.config:
@@ -50,12 +50,12 @@ class SteamBot(object):
                     self.logger.error("steam_guard not defined in config")
                     sys.exit(1)
 
-                self.logger.info("Logging in as user {0}...".format(self.username))
+                self.logger.info(f"Logging in as user {self.username}...")
                 self.sa = SteamAuthenticator(self.config['steam_guard'])
                 self.login()
-                self.logger.success("Logged in as user {0}".format(self.username))
+                self.logger.success(f"Logged in as user {self.username}")
             else:
-                self.logger.warning("Config file for user provided does not exist: {0}".format(config_file))
+                self.logger.warning(f"Config file for user provided does not exist: {config_file}")
                 # self.client.cli_login()
         else:
             self.logger.warning("Username not provided")
@@ -68,7 +68,8 @@ class SteamBot(object):
             self.client.login(self.username, password=self.config['password'], two_factor_code=code)
         else:
             self.logger.warning(
-                "Steam Guard code failed; waiting {0} seconds and trying again".format(self.steam_guard_code_wait))
+                f"Steam Guard code failed; waiting {self.steam_guard_code_wait} seconds and trying again"
+            )
             sleep(self.steam_guard_code_wait)
             self.login(code)
 
@@ -79,10 +80,52 @@ class SteamBot(object):
         def print_vac_status(msg):
             self.logger.info("Number of VAC Bans: %s" % msg.body.numBans)
 
-        self.logger.info("Logged on as: {0}".format(self.client.user.name))
-        self.logger.info("Community profile: {0}".format(self.client.steam_id.community_url))
-        self.logger.info("Last logon: {0}".format(self.client.user.last_logon))
-        self.logger.info("Last logoff: {0}".format(self.client.user.last_logoff))
-        self.logger.info("Number of friends: {0}".format(len(self.client.friends)))
+        self.logger.info(f"Logged on as: {self.client.user.name}")
+        self.logger.info(f"Community profile: {self.client.steam_id.community_url}")
+        self.logger.info(f"Last logon: {self.client.user.last_logon}")
+        self.logger.info(f"Last logoff: {self.client.user.last_logoff}")
+        self.logger.info(f"Number of friends: {len(self.client.friends)}")
 
         self.client.logout()
+
+    def check_trade_requests(self):
+        """Check for incoming trade offers"""
+        self.logger.debug("Checking trade requests...")
+        
+        try:
+            # Check if client has trade manager or web session
+            if hasattr(self.client, 'get_trade_offers'):
+                offers = self.client.get_trade_offers()
+            elif hasattr(self.client, 'steam_id'):
+                # Alternative approach - check if we can access trade data through other means
+                self.logger.info("Trade offers API not directly available through client")
+                self.logger.info("Consider using Steam Web API or trade manager for trade functionality")
+                return
+            else:
+                self.logger.warning("Trade functionality not available with current Steam client")
+                return
+                
+            if offers and 'trade_offers_received' in offers:
+                received_offers = offers['trade_offers_received']
+                self.logger.info(f"Found {len(received_offers)} incoming trade offers")
+                
+                for offer in received_offers:
+                    offer_id = offer['tradeofferid']
+                    partner_id = offer['accountid_other']
+                    state = offer['trade_offer_state']
+                    
+                    if state == 2:  # Active state
+                        self.logger.info(f"Active trade offer {offer_id} from user {partner_id}")
+                        
+                        if 'items_to_give' in offer:
+                            self.logger.info(f"  Items to give: {len(offer['items_to_give'])}")
+                        if 'items_to_receive' in offer:
+                            self.logger.info(f"  Items to receive: {len(offer['items_to_receive'])}")
+                            
+                        if 'message' in offer and offer['message']:
+                            self.logger.info(f"  Message: {offer['message']}")
+            else:
+                self.logger.info("No trade offers found")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to check trade requests: {e}")

@@ -1,4 +1,4 @@
-steam
+steam[client]
 beautifulsoup4
 trulogger
-google
+psutil

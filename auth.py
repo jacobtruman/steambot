@@ -8,8 +8,7 @@ from steam.guard import SteamAuthenticator
 if len(sys.argv) > 1:
     username = sys.argv[1]
 
-    config_dir = "{0}/configs".format(os.path.dirname(os.path.realpath(sys.argv[0])))
-    config_file = "{0}/{1}.json".format(config_dir, username)
+    config_file = f"{os.path.dirname(os.path.realpath(sys.argv[0]))}/configs/{username}.json"
 
     if os.path.exists(config_file):
         try:
